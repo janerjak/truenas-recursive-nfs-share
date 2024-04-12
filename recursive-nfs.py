@@ -36,7 +36,7 @@ def get_list_of_relevant_datasets_for(zfs_list_output: list[str]) -> list[str]:
         return any(dataset.startswith(requested_recursive_share) for requested_recursive_share in g.config.shares)
     all_datasets = obtain_list_of_all_datasets(zfs_list_output)
     relevant_datasets = [dataset for dataset in all_datasets if is_dataset_relevant(dataset)]
-    print(f"{len(relevant_datasets)} of {len(all_datasets)} datasets are relevant with the current config:")
+    print(f"{len(relevant_datasets)} of {len(all_datasets)} datasets require shares with the current config:")
     for dataset in relevant_datasets:
         print(f"\t- {dataset}")
     return relevant_datasets
