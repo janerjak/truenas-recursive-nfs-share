@@ -1,0 +1,17 @@
+truenas_api_key: "1-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+shares:
+    - "tank/"
+
+default_options:
+    networks: ~
+    hosts:
+        - "192.168.0.2"
+    ro: false
+    maproot_user: ~
+    maproot_group: ~
+    mapall_user: ~
+    mapall_group: ~
+
+custom_options:
+    "tank/readonly":
+        ro: true
