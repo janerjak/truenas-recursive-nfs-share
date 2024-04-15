@@ -7,6 +7,7 @@ from halo import Halo
 from helpers.args import obtain_args
 from helpers.config_loader import obtain_config, obtain_config
 from helpers.spinner import spinner
+from modules.api import APIManager
 
 def obtain_zfs_list_output() -> list[str]:
     if g.args.datasets_file is None:
@@ -50,6 +51,9 @@ def main(_args, _config):
     g.args = _args
 
     relevant_datasets = obtain_list_of_relevant_datasets()
+
+    api_manager = APIManager()
+    print(api_manager.get_nfs_shares().json())
 
 if __name__ == "__main__":
     _args = obtain_args()
