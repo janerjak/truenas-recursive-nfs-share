@@ -1,3 +1,11 @@
+### System-specific ignores
+.DS_Store
+**/.DS_Store
+
+## Sensitive data
+config.yaml
+datasets-output.txt
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
