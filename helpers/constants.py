@@ -1,0 +1,1 @@
+AUTOCREATE_COMMENT_SUFFIX = "(automatically created)"

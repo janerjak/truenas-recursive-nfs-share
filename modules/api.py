@@ -26,5 +26,5 @@ class APIManager:
 			**data_kwarg,
 		)
 
-	def get_nfs_shares(self):
+	def get_nfs_shares_query_response(self):
 		return self.perform_request(get, "/sharing/nfs")

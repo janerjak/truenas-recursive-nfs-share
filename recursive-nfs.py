@@ -1,59 +1,49 @@
-from sys import stdin
+from colorama import Fore
+from data_classes.nfs_share import NFSShare
 
 import helpers.global_fields as g
 
-from halo import Halo
-
 from helpers.args import obtain_args
+from helpers.cli_utility import is_input_prompt_positive
 from helpers.config_loader import obtain_config, obtain_config
-from helpers.spinner import spinner
 from modules.api import APIManager
-
-def obtain_zfs_list_output() -> list[str]:
-    if g.args.datasets_file is None:
-        print("Attempting to read from STDIN...\nPass in a file, or enter content manually and confirm with Ctrl+D (Ctrl+Z, then Enter on Windows)")
-        return stdin.readlines()
-    else:
-        with open(g.args.datasets_file, "r") as dataset_file_handle, Halo(f"Reading dataset list from '{g.args.datasets_file}'"):
-            return dataset_file_handle.readlines()
-
-@spinner("Extracting list of datasets")
-def obtain_list_of_all_datasets(zfs_list_output) -> list[str]:
-    filtered_list_output = [line.strip() for line in zfs_list_output if len(line.strip()) > 0]
-    
-    if not isinstance(filtered_list_output, list) or len(filtered_list_output) < 1:
-        raise Exception("No list of datasets was received (via STDIN or the datasets-file).\nPlease see the quick guide for reference on how to use this tool")
-    
-    expected_list_header = filtered_list_output[0]
-    if expected_list_header != "NAME":
-        raise Exception("Expected list header 'NAME' from 'zfs list -o name' invocation. Terminating for safety.")
-    
-    list_without_header = filtered_list_output[1:]
-    print(f"Found {len(list_without_header)} datasets in total")
-    return list_without_header
-
-def get_list_of_relevant_datasets_for(zfs_list_output: list[str]) -> list[str]:
-    def is_dataset_relevant(dataset: str):
-        return any(dataset.startswith(requested_recursive_share) for requested_recursive_share in g.config.shares)
-    all_datasets = obtain_list_of_all_datasets(zfs_list_output)
-    relevant_datasets = [dataset for dataset in all_datasets if is_dataset_relevant(dataset)]
-    print(f"{len(relevant_datasets)} of {len(all_datasets)} datasets require shares with the current config:")
-    for dataset in relevant_datasets:
-        print(f"\t- {dataset}")
-    return relevant_datasets
-
-def obtain_list_of_relevant_datasets() -> list[str]:
-    zfs_list_output = obtain_zfs_list_output()
-    return get_list_of_relevant_datasets_for(zfs_list_output)
+from modules.zfs import obtain_list_of_relevant_datasets
 
 def main(_args, _config):
     g.config = _config
     g.args = _args
 
+    # Extract relevant datasets from output of zfs list -o POOL_NAME
     relevant_datasets = obtain_list_of_relevant_datasets()
 
+    # Connect to the API
     api_manager = APIManager()
-    print(api_manager.get_nfs_shares().json())
+    
+    # Check if API is available
+    # TODO
+    
+    # Obtain all current NFS shares
+    nfs_shares_query_response = api_manager.get_nfs_shares_query_response()
+    nfs_shares = NFSShare.list_from_api_response(nfs_shares_query_response)
+    
+    # Check for non-automatically created shares that are relevant
+    # to query the user whether they want them deleted
+    non_automatic_relevant_nfs_shares = [
+        nfs_share for nfs_share in nfs_shares
+            if nfs_share.is_relevant(relevant_datasets)
+                and not nfs_share.is_automatically_created()
+    ]
+
+    if non_automatic_relevant_nfs_shares:
+        print("{Fore.ORANGE}Warning: There are active relevant NFS shares that have not been automatically created:{Fore.RESET}")
+        print("\n".join(non_automatic_relevant_nfs_shares))
+        delete_non_automatic_shares_response = input("\nDo you want to delete them? y/[n]")
+        should_delete_non_automatic_shares = is_input_prompt_positive(delete_non_automatic_shares_response)
+
+        if should_delete_non_automatic_shares:
+            for non_automatic_share in non_automatic_relevant_nfs_shares:
+                non_automatic_share.delete_using_api()
+
 
 if __name__ == "__main__":
     _args = obtain_args()
