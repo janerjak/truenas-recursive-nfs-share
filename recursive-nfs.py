@@ -17,7 +17,7 @@ def main(_args, _config) -> bool:
     # Check if API is available
     g.api_manager.check_api_availability()
 
-    # Extract relevant datasets from output of zfs list -o POOL_NAME
+    # Extract relevant datasets using the API, or from output of zfs list -o POOL_NAME; See the help page for available options
     relevant_datasets = obtain_list_of_relevant_datasets()
     if relevant_datasets is None:
         return False
@@ -36,8 +36,8 @@ def main(_args, _config) -> bool:
     if non_automatic_relevant_shares:
         handle_non_automatic_relevant_shares(non_automatic_relevant_shares)
 
-    # Remove all automatically created shares (do not care if they are relevant)
-    # NOTE: This is for removing outdated shares that no longer are required, or even broken
+    # Remove all automatically created shares that are no longer relevant
+    # NOTE: This is both for removing outdated shares that are no longer required and those that might be broken
     deletion_succeeded, relevant_automatically_created_shares = delete_irrelevant_automatically_created_shares(all_shares, relevant_datasets)
     if not deletion_succeeded:
         return False
