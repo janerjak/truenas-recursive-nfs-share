@@ -1,4 +1,7 @@
+argparse
+colorama
+inflect
 halo
 munch
 pyyaml
-inflect
+requests
