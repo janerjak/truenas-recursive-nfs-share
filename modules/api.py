@@ -21,12 +21,14 @@ class APIManager:
 	def get_uri(self, endpoint: str) -> str:
 		return f"{self.uri_prefix}{endpoint}"
 
-	def perform_request(self, request_method: callable, endpoint: str, json_body: dict | None = None) -> Response:
-		data_kwarg = { "json": json_body } if json_body else {}
+	def perform_request(self, request_method: callable, endpoint: str, json_body: dict | None = None, query_params: dict = None) -> Response:
+		body_kwarg = { "json": json_body } if json_body else {}
+		query_kwarg = { "params": query_params } if query_params else {}
 		return request_method(
 			self.get_uri(endpoint),
 			headers=self.request_headers,
-			**data_kwarg,
+			**body_kwarg,
+			**query_kwarg,
 		)
 	
 	def perform_nfs_request(self, request_method: callable, endpoint: str = "", body: dict | None = None) -> Response:
@@ -39,6 +41,15 @@ class APIManager:
 			return len(api_key_response.json()) > 0
 		except:
 			return False
+		
+	@spinner("Retrieving available datasets")
+	def get_available_datasets_query_response(self) -> bool:
+		# TODO: Implement query filters for better performance
+		return self.perform_request(get, "/pool/dataset", query_params={
+			"extra.properties": "['id']",
+			"extra.flat": "true",
+			"extra.retrieve_children": "true",
+		})
 
 	@spinner("Retrieving currently active NFS shares")
 	def get_shares_query_response(self):

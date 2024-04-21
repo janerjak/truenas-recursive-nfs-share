@@ -1,6 +1,3 @@
-# TEMP
-import curlify
-
 from colorama import Fore
 from halo import Halo
 from sys import stdin
@@ -12,12 +9,14 @@ from helpers.cli_utility import is_input_prompt_positive
 from helpers.spinner import spinner, spinner_generator
 
 def obtain_zfs_list_output() -> list[str]:
-    if g.args.datasets_file is None:
+    if g.args.datasets_file is not None:
+        with open(g.args.datasets_file, "r") as dataset_file_handle, Halo(f"Reading dataset list from '{g.args.datasets_file}'"):
+            return dataset_file_handle.readlines()
+    elif g.args.stdin:
         print("Attempting to read from STDIN...\nPass in a file, or enter content manually and confirm with Ctrl+D (Ctrl+Z, then Enter on Windows)")
         return stdin.readlines()
     else:
-        with open(g.args.datasets_file, "r") as dataset_file_handle, Halo(f"Reading dataset list from '{g.args.datasets_file}'"):
-            return dataset_file_handle.readlines()
+        return None
 
 @spinner("Extracting list of datasets")
 def obtain_list_of_all_datasets(zfs_list_output) -> list[str]:
@@ -34,19 +33,33 @@ def obtain_list_of_all_datasets(zfs_list_output) -> list[str]:
     print(f"Found {len(list_without_header)} datasets in total")
     return list_without_header
 
-def get_list_of_relevant_datasets_for(zfs_list_output: list[str]) -> list[str]:
+def get_list_of_relevant_datasets_for_dataset_list(dataset_list: list[str]) -> list[str]:
     def is_dataset_relevant(dataset: str):
         return any(dataset.startswith(requested_recursive_share) for requested_recursive_share in g.config.shares)
-    all_datasets = obtain_list_of_all_datasets(zfs_list_output)
-    relevant_datasets = [dataset for dataset in all_datasets if is_dataset_relevant(dataset)]
-    print(f"{len(relevant_datasets)} of {len(all_datasets)} datasets require shares with the current config:")
+    relevant_datasets = [dataset for dataset in dataset_list if is_dataset_relevant(dataset)]
+    print(f"{len(relevant_datasets)} of {len(dataset_list)} datasets require shares with the current config:")
     for dataset in relevant_datasets:
         print(f"\t- {dataset}")
     return relevant_datasets
 
+def get_list_of_relevant_datasets_for_list_output(zfs_list_output: list[str]) -> list[str]:
+    all_datasets = obtain_list_of_all_datasets(zfs_list_output)
+    return get_list_of_relevant_datasets_for_dataset_list(all_datasets)
+
 def obtain_list_of_relevant_datasets() -> list[str]:
     zfs_list_output = obtain_zfs_list_output()
-    return get_list_of_relevant_datasets_for(zfs_list_output)
+    if zfs_list_output is None:
+        # No data retrieved from datasets file or STDIN. Falling back to API request
+        datasets_query_response = g.api_manager.get_available_datasets_query_response()
+        if datasets_query_response.status_code != 200:
+            print(f"{Fore.RED}Could not gather available datasets from any applicable source. Please refer to the help page.{Fore.RED}")
+            return None
+        datasets_response_json = datasets_query_response.json()
+        all_datasets = [dataset_info["id"] for dataset_info in datasets_response_json]
+        all_datasets.sort()
+        return get_list_of_relevant_datasets_for_dataset_list(all_datasets)
+    else:    
+        return get_list_of_relevant_datasets_for_list_output(zfs_list_output)
 
 def handle_non_automatic_relevant_shares(non_automatic_relevant_shares: list[NFSShare]):
     number_of_problematic_shares = len(non_automatic_relevant_shares)
@@ -62,25 +75,40 @@ def handle_non_automatic_relevant_shares(non_automatic_relevant_shares: list[NFS
             for non_automatic_share in non_automatic_relevant_shares:
                 g.api_manager.delete_share(non_automatic_share)
                 
-def delete_automatically_created_shares(all_shares: list[NFSShare]) -> bool:
+def delete_irrelevant_automatically_created_shares(all_shares: list[NFSShare], relevant_datasets: list[str]) -> bool:
     automatically_created_shares = [share for share in all_shares if share.is_automatically_created()]
     number_of_automatically_created_shares = len(automatically_created_shares)
     if number_of_automatically_created_shares <= 0:
         return True
     
-    print(f"{Fore.CYAN}Note: There are {number_of_automatically_created_shares} automatically created shares present that will be deleted:{Fore.RESET}")
-    for automatic_share in automatically_created_shares:
+    print(f"{Fore.CYAN}Note: There are {number_of_automatically_created_shares} automatically created shares already present")
+
+    # Filter for relevant shares that should only be updated, instead of deleted
+    irrelevant_automatically_created_shares = [share for share in automatically_created_shares if share.path_name not in relevant_datasets]
+    number_of_shares_to_delete = len(irrelevant_automatically_created_shares)
+
+    if number_of_shares_to_delete <= 0:
+        return True
+
+    print(f"{Fore.YELLOW}Warning: The following {number_of_shares_to_delete} automatically created shares that are no longer relevant:")
+    for automatic_share in irrelevant_automatically_created_shares:
         print(automatic_share)
-    print(f"{Fore.CYAN}Note: Above automatically created shares ({number_of_automatically_created_shares}) will be deleted.\n{Fore.RESET}")
+    print(f"{Fore.YELLOW}Warning: Above automatically created shares ({number_of_shares_to_delete}) will be deleted.\n{Fore.RESET}")
 
     delete_automatic_shares_response = input("\nDo you want to delete these automatically created shares? y/[n]: ")
     should_delete_automatic_shares = is_input_prompt_positive(delete_automatic_shares_response)
     if not should_delete_automatic_shares:
         return False
     
-    with spinner_generator(f"Removing {number_of_automatically_created_shares} automatically created shares"):
+    remaining_number_of_shares_to_delete = number_of_shares_to_delete
+    def get_spinner_text(share: NFSShare):
+        f"Removing automatically created shares ({share.path_name}, {remaining_number_of_shares_to_delete} remaining)..."
+
+    with spinner_generator() as spinner:
         for automatic_share in automatically_created_shares:
+            spinner.start(get_spinner_text(automatic_share))
             g.api_manager.delete_share(automatic_share)
+            remaining_number_of_shares_to_delete -= 1
 
     return True
 
