@@ -1,17 +1,28 @@
-truenas_api_key: "1-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+truenas:
+    api:
+        host: "https://192.168.X.X"
+        path: "/api/v2.0"
+        key: "1-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
 shares:
-    - "tank/"
+    - "tank/dataset-to-share-recursively-1"
+    - "tank/other-dataset/with/deeper/nesting"
+    - "tank/readonly-dataset"
+    - "tank/dataset-with-different-user"
 
-default_options:
-    networks: ~
-    hosts:
-        - "192.168.0.2"
-    ro: false
-    maproot_user: ~
-    maproot_group: ~
-    mapall_user: ~
-    mapall_group: ~
+share_options:
+    default:
+        networks: []
+        hosts:
+            - "192.168.Y.Y"
+        ro: false
+        maproot_user: host-user-for-shares
+        maproot_group: host-user-for-shares
+        mapall_user: ~
+        mapall_group: ~
 
-custom_options:
-    "tank/readonly":
-        ro: true
+    custom:
+        "tank/readonly-dataset":
+            ro: true
+        "tank/dataset-with-different-user":
+            maproot_user: other-user
