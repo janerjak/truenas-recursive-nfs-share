@@ -74,21 +74,25 @@ def handle_non_automatic_relevant_shares(non_automatic_relevant_shares: list[NFS
         with spinner_generator(f"Removing {number_of_problematic_shares} present manual shares"):
             for non_automatic_share in non_automatic_relevant_shares:
                 g.api_manager.delete_share(non_automatic_share)
-                
-def delete_irrelevant_automatically_created_shares(all_shares: list[NFSShare], relevant_datasets: list[str]) -> bool:
+
+# NOTE: Returns (bool, list[NFSShare]):
+#   1. Whether all shares that need to be deleted, were (also True if no shares had to be deleted)            
+#   2. List of all relevant automatically created shares (Note: None is returned in this element, if the action failed)
+def delete_irrelevant_automatically_created_shares(all_shares: list[NFSShare], relevant_datasets: list[str]) -> tuple[bool, list[NFSShare]]:
     automatically_created_shares = [share for share in all_shares if share.is_automatically_created()]
     number_of_automatically_created_shares = len(automatically_created_shares)
     if number_of_automatically_created_shares <= 0:
-        return True
+        return True, []
     
     print(f"{Fore.CYAN}Note: There are {number_of_automatically_created_shares} automatically created shares already present")
 
     # Filter for relevant shares that should only be updated, instead of deleted
     irrelevant_automatically_created_shares = [share for share in automatically_created_shares if share.path_name not in relevant_datasets]
+    relevant_automatically_created_shares = [share for share in automatically_created_shares if share not in irrelevant_automatically_created_shares]
     number_of_shares_to_delete = len(irrelevant_automatically_created_shares)
 
     if number_of_shares_to_delete <= 0:
-        return True
+        return True, relevant_automatically_created_shares
 
     print(f"{Fore.YELLOW}Warning: The following {number_of_shares_to_delete} automatically created shares that are no longer relevant:")
     for automatic_share in irrelevant_automatically_created_shares:
@@ -98,7 +102,7 @@ def delete_irrelevant_automatically_created_shares(all_shares: list[NFSShare], r
     delete_automatic_shares_response = input("\nDo you want to delete these automatically created shares? y/[n]: ")
     should_delete_automatic_shares = is_input_prompt_positive(delete_automatic_shares_response)
     if not should_delete_automatic_shares:
-        return False
+        return False, None
     
     remaining_number_of_shares_to_delete = number_of_shares_to_delete
     def get_spinner_text(share: NFSShare):
@@ -110,17 +114,54 @@ def delete_irrelevant_automatically_created_shares(all_shares: list[NFSShare], r
             g.api_manager.delete_share(automatic_share)
             remaining_number_of_shares_to_delete -= 1
 
-    return True
+    return True, relevant_automatically_created_shares
 
-def create_recursive_shares(relevant_datasets: list[str]) -> bool:
-    shares_to_create = [
+def generate_shares_based_on_config(relevant_datasets: list[str]) -> list[NFSShare]:
+    return [
         NFSShare.from_config_options(relevant_dataset_path_name)
         for relevant_dataset_path_name in relevant_datasets
     ]
+
+def update_present_recursive_shares(relevant_automatically_created_shares: list[NFSShare]) -> bool:
+    already_covered_datasets = [share.path_name for share in relevant_automatically_created_shares]
+    shares_with_new_values = generate_shares_based_on_config(already_covered_datasets)
+    for share in shares_with_new_values:
+        matching_shares_generator = (
+            matching_share for matching_share in relevant_automatically_created_shares
+                if matching_share.path_name == share.path_name
+        )
+        matching_present_share = next(matching_shares_generator, None)
+        if matching_present_share is None:
+            raise Exception("No matching, already present share was found, despite this being expected. This is almost definitely an error by this application. Please report this as a bug and attach the entire log and config.")
+        share.id = matching_present_share.id
+
+    number_of_shares_to_update = len(shares_with_new_values)
+    number_of_remaining_shares = number_of_shares_to_update
+    print(f"{Fore.CYAN}Warning: There are {number_of_shares_to_update} still relevant, automatically created shares. This tool will attempt to update them.")
+    update_automatic_shares_response = input("\nDo you want to proceed updating these shares? [y]/n: ")
+    should_update_automatic_shares = (not update_automatic_shares_response) or is_input_prompt_positive(update_automatic_shares_response)
+    if not should_update_automatic_shares:
+        return False
+    
+    def get_spinner_text(share: NFSShare):
+        return f"Updating share {share.path_name} ({number_of_remaining_shares} remaining)..."
+    with spinner_generator(f"Updating {number_of_shares_to_update} shares...") as spinner:
+        for updated_share in shares_with_new_values:
+            spinner.start(get_spinner_text(updated_share))
+            update_response = g.api_manager.update_share(updated_share)
+            if update_response.status_code != 200:
+                raise Exception(f"Error ({update_response.reason}):\n{update_response.text}")
+            number_of_remaining_shares -= 1
+        spinner.succeed(f"Updated {number_of_shares_to_update} already present shares")
+
+    return True
+
+def create_recursive_shares(relevant_datasets: list[str]) -> bool:
+    shares_to_create = generate_shares_based_on_config(relevant_datasets)
     number_of_shares_to_create = len(shares_to_create)
     if number_of_shares_to_create <= 0:
-        print(f"{Fore.RED}Note: There are no relevant datasets available to create shares for\n{Fore.RESET}")
-        return False
+        print(f"{Fore.CYAN}Note: There are no relevant datasets available that need new shares\n{Fore.RESET}")
+        return True
     
     print(f"{Fore.CYAN}Warning: Attempting to create the following ({number_of_shares_to_create}) NFS shares:{Fore.RESET}")
     print("\n".join(
@@ -136,15 +177,13 @@ def create_recursive_shares(relevant_datasets: list[str]) -> bool:
     number_of_remaining_shares = number_of_shares_to_create
     def get_spinner_text(share: NFSShare):
         return f"Creating share {share.path_name} ({number_of_remaining_shares} remaining)..."
-    starting_spinner_text = f"Creating {number_of_shares_to_create} shares..."
-    with spinner_generator(starting_spinner_text) as spinner:
+    with spinner_generator(f"Creating {number_of_shares_to_create} shares...") as spinner:
         for automatic_share in shares_to_create:
             spinner.start(get_spinner_text(automatic_share))
             creation_response = g.api_manager.create_share(automatic_share)
             if creation_response.status_code != 200:
                 raise Exception(f"Error ({creation_response.reason}):\n{creation_response.text}")
             number_of_remaining_shares -= 1
-        spinner.start(starting_spinner_text)
         spinner.succeed(f"Created {number_of_shares_to_create} shares")
 
     return True
