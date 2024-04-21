@@ -83,8 +83,6 @@ def delete_irrelevant_automatically_created_shares(all_shares: list[NFSShare], r
     number_of_automatically_created_shares = len(automatically_created_shares)
     if number_of_automatically_created_shares <= 0:
         return True, []
-    
-    print(f"{Fore.CYAN}Note: There are {number_of_automatically_created_shares} automatically created shares already present")
 
     # Filter for relevant shares that should only be updated, instead of deleted
     irrelevant_automatically_created_shares = [share for share in automatically_created_shares if share.path_name not in relevant_datasets]
@@ -94,7 +92,7 @@ def delete_irrelevant_automatically_created_shares(all_shares: list[NFSShare], r
     if number_of_shares_to_delete <= 0:
         return True, relevant_automatically_created_shares
 
-    print(f"{Fore.YELLOW}Warning: The following {number_of_shares_to_delete} automatically created shares that are no longer relevant:")
+    print(f"{Fore.YELLOW}Warning: The following {number_of_shares_to_delete} automatically created shares are no longer relevant:")
     for automatic_share in irrelevant_automatically_created_shares:
         print(automatic_share)
     print(f"{Fore.YELLOW}Warning: Above automatically created shares ({number_of_shares_to_delete}) will be deleted.\n{Fore.RESET}")
@@ -106,13 +104,14 @@ def delete_irrelevant_automatically_created_shares(all_shares: list[NFSShare], r
     
     remaining_number_of_shares_to_delete = number_of_shares_to_delete
     def get_spinner_text(share: NFSShare):
-        f"Removing automatically created shares ({share.path_name}, {remaining_number_of_shares_to_delete} remaining)..."
-
-    with spinner_generator() as spinner:
-        for automatic_share in automatically_created_shares:
+        return f"Removing automatically created shares ({share.path_name}, {remaining_number_of_shares_to_delete} remaining)..."
+    starting_spinner_text = f"Removing automatically created shares ({number_of_shares_to_delete})"
+    with spinner_generator(starting_spinner_text) as spinner:
+        for automatic_share in irrelevant_automatically_created_shares:
             spinner.start(get_spinner_text(automatic_share))
             g.api_manager.delete_share(automatic_share)
             remaining_number_of_shares_to_delete -= 1
+        spinner.succeed(starting_spinner_text)
 
     return True, relevant_automatically_created_shares
 
@@ -137,6 +136,10 @@ def update_present_recursive_shares(relevant_automatically_created_shares: list[
 
     number_of_shares_to_update = len(shares_with_new_values)
     number_of_remaining_shares = number_of_shares_to_update
+
+    if number_of_shares_to_update <= 0:
+        return True
+
     print(f"{Fore.CYAN}Warning: There are {number_of_shares_to_update} still relevant, automatically created shares. This tool will attempt to update them.")
     update_automatic_shares_response = input("\nDo you want to proceed updating these shares? [y]/n: ")
     should_update_automatic_shares = (not update_automatic_shares_response) or is_input_prompt_positive(update_automatic_shares_response)
