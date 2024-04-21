@@ -1,5 +1,4 @@
 from dataclasses import asdict, dataclass, field
-from json import loads
 from typing import Self
 from requests import Response
 
