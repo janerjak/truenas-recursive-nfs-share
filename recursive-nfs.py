@@ -42,9 +42,8 @@ def main(_args, _config) -> bool:
     if not deletion_succeeded:
         return False
     
-    # Update already present automatically created shares
-    if not update_present_recursive_shares(relevant_automatically_created_shares):
-        return False
+    # Update already present automatically created shares, if user wants to
+    update_present_recursive_shares(relevant_automatically_created_shares)
 
     # Create all relevant remaining shares
     dataset_path_names_with_present_shares = [share.path_name for share in relevant_automatically_created_shares]
